@@ -8,7 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import { getCliente } from "./config.js";
 import { montarSystemPrompt } from "./system-prompt.js";
-import { TOOL_DEFS, executarTool, leadEstaPausado, pausarLead, despausarLead, zapiSendText } from "./tools.js";
+import { TOOL_DEFS, executarTool, leadEstaPausado, pausarLead, despausarLead, zapiSendText, foiEnviadaPorNos } from "./tools.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, ".env") });
@@ -91,8 +91,14 @@ app.post("/webhook", async (req, res) => {
     const nomeLead = body.senderName || body.chatName || "";
     if (!telefone) return;
 
-    // Mensagens fromMe (operador respondendo manualmente) → silencia agente 7 dias
+    // Mensagens fromMe podem ser:
+    // (a) echo da própria Bia (Z-API ecoa toda mensagem que ela mandou) → ignora
+    // (b) operador humano respondendo manualmente pelo WhatsApp → pausa agente 7d
     if (body.fromMe) {
+      if (foiEnviadaPorNos(telefone)) {
+        console.log(`[${telefone}] echo da própria Bia — ignorando`);
+        return;
+      }
       const texto = body.text?.message || body.message || body.body || "";
       if (/\b(\/agente\s+on|reativar agente)\b/i.test(texto)) {
         despausarLead(telefone);

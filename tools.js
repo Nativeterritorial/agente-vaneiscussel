@@ -34,12 +34,22 @@ export function leadEstaPausado(telefone) {
   return true;
 }
 
+// Memória curta de mensagens enviadas pelo agente pra distinguir echo (fromMe via Z-API) de digitação manual humana
+const _enviosRecentes = new Map();
+const ECHO_JANELA_MS = 60 * 1000;
+
+export function foiEnviadaPorNos(phone) {
+  const ts = _enviosRecentes.get(phone);
+  return ts && (Date.now() - ts) < ECHO_JANELA_MS;
+}
+
 export async function zapiSendText(phone, message) {
   const base = process.env.ZAPI_BASE || `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}`;
   const headers = { "Content-Type": "application/json" };
   if (process.env.ZAPI_CLIENT_TOKEN) headers["Client-Token"] = process.env.ZAPI_CLIENT_TOKEN;
   const r = await fetch(`${base}/send-text`, { method: "POST", headers, body: JSON.stringify({ phone, message }) });
   if (!r.ok) console.error(`Z-API erro ${r.status}: ${await r.text()}`);
+  _enviosRecentes.set(phone, Date.now());
   return r.ok;
 }
 
