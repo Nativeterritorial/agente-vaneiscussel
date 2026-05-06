@@ -1,0 +1,51 @@
+{
+  "imobiliaria": {
+    "nome": "Vanei Scussel Imóveis",
+    "cidade": "Veranópolis",
+    "estado": "RS",
+    "site": "https://www.vaneiscussel.com",
+    "horario_atendimento": "Seg-Sex 8h30-18h, Sáb 9h-12h",
+    "endereco": "Rua Marechal Deodoro da Fonseca, 280 — Centro, Veranópolis/RS",
+    "instagram": "@vaneiscussel"
+  },
+  "agente": {
+    "nome": "Bia",
+    "tom": "informal_proximo",
+    "emoji_permitido": true
+  },
+  "corretores": [
+    {
+      "nome": "Vanei",
+      "telefone": "5554981033499",
+      "especialidade": "venda e aluguel"
+    }
+  ],
+  "corretor_padrao": "5554981033499",
+  "planilha_imoveis": {
+    "tipo": "csv_github",
+    "url": "https://raw.githubusercontent.com/Nativeterritorial/agente-vaneiscussel/main/imoveis.csv"
+  },
+  "regras_negocio": {
+    "max_imoveis_por_resposta": 3,
+    "ocultar_endereco_completo": true,
+    "permitir_negociar_preco": false
+  },
+  "transferencia": {
+    "pausa_apos_transferir_horas": 6,
+    "mensagem_pre_transferencia": "Massa! Vou já chamar o Vanei pra te atender, em poucos minutos ele te chama 👍"
+  },
+  "faq": [
+    {
+      "pergunta": "vocês atendem que cidades?",
+      "resposta": "A gente atende principalmente Veranópolis e região (Cotiporã, Vila Flores, Nova Prata, Nova Bassano e outras cidades da serra). Se tiver dúvida sobre alguma cidade específica, me avisa que confirmo!"
+    },
+    {
+      "pergunta": "trabalham com financiamento?",
+      "resposta": "Sim! O Vanei te explica direitinho as opções (Caixa, bancos privados, etc) na hora do atendimento."
+    },
+    {
+      "pergunta": "qual o horário?",
+      "resposta": "Atendemos de segunda a sexta das 8h30 às 18h, e sábados das 9h ao meio-dia 😊"
+    }
+  ]
+}

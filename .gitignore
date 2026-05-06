@@ -1,0 +1,7 @@
+.env
+node_modules/
+conversas.json
+estado.json
+leads.jsonl
+pausas.json
+*.log

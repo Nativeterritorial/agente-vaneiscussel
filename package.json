@@ -1,0 +1,17 @@
+{
+  "name": "agente-imobiliaria-base",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Template de agente WhatsApp pra imobiliárias — Z-API + Claude + Google Sheets",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0",
+    "csv-parse": "^5.5.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
+  }
+}
