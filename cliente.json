@@ -23,8 +23,8 @@
   ],
   "corretor_padrao": "5554981033499",
   "planilha_imoveis": {
-    "tipo": "csv_github",
-    "url": "https://raw.githubusercontent.com/Nativeterritorial/agente-vaneiscussel/main/imoveis.csv"
+    "tipo": "google_sheets_csv",
+    "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQJrOgN48wdepcrigsyWzosGNliXxKVniHHtzvTqFbXQeIAkzn_rxzmvnbA7B0XOZFDIbYvGdzXv6W2/pub?output=csv&gid=464702849&single=true"
   },
   "regras_negocio": {
     "max_imoveis_por_resposta": 3,
