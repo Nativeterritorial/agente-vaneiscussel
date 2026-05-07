@@ -9,6 +9,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getCliente } from "./config.js";
 import { montarSystemPrompt } from "./system-prompt.js";
 import { TOOL_DEFS, executarTool, leadEstaPausado, pausarLead, despausarLead, zapiSendText, foiEnviadaPorNos } from "./tools.js";
+import { carregarConhecimento, tamanhoEstimado } from "./conhecimento.js";
+import { extrairMidiaDoWebhook, baixarMidia, analisarComVision } from "./media.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, ".env") });
@@ -33,9 +35,14 @@ function salvarEstado() { fs.writeFileSync(ESTADO_FILE, JSON.stringify(estado, n
 console.log(`🤖 Agente "${cliente.agente?.nome}" — ${cliente.imobiliaria?.nome}`);
 
 const SYSTEM_PROMPT = montarSystemPrompt();
+const t = tamanhoEstimado();
+console.log(`📚 Base de conhecimento imobiliário: ~${t.tokensEstimados} tokens`);
 
 function systemBlocks() {
-  return [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }];
+  return [
+    { type: "text", text: carregarConhecimento(), cache_control: { type: "ephemeral" } },
+    { type: "text", text: SYSTEM_PROMPT },
+  ];
 }
 
 async function rodarAgente(telefone, nomeLead, mensagem) {
@@ -123,10 +130,16 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
+    // Mídia: lê com Vision e responde
+    const midia = extrairMidiaDoWebhook(body);
+    if (midia) {
+      await processarMidiaRecebida(telefone, nomeLead, midia);
+      return;
+    }
+
     const mensagem = body.text?.message || body.message || body.body || body.audio?.transcription || "";
     if (!mensagem) {
-      // Mídia/áudio sem transcrição: avisa o corretor
-      console.log(`[${telefone}] mensagem sem texto — ignorando por enquanto`);
+      console.log(`[${telefone}] mensagem sem texto — ignorando`);
       return;
     }
 
@@ -140,6 +153,40 @@ app.post("/webhook", async (req, res) => {
     console.error("Erro no webhook:", e);
   }
 });
+
+async function processarMidiaRecebida(telefone, nomeLead, midia) {
+  console.log(`[${telefone}] mídia ${midia.tipo} (${midia.fileName}) — analisando…`);
+  try {
+    const buffer = await baixarMidia(midia.url);
+    const contexto = `Lead ${nomeLead || ""} (${telefone}) na conversa com a Bia.`;
+    const analise = await analisarComVision(buffer, midia.mimeType, contexto);
+
+    // Sanitiza e responde ao lead
+    const resp = (analise.sugestao_resposta_lead || `Recebi seu ${analise.tipo} 📋. Vou repassar pro Vanei.`).replace(/[`{}]/g, "").slice(0, 400);
+    await zapiSendText(telefone, resp);
+
+    // Salva no histórico que recebemos doc (pra próximas mensagens o agente saber)
+    if (!historico[telefone]) historico[telefone] = [];
+    historico[telefone].push({
+      role: "user",
+      content: `[Cliente enviou ${midia.tipo}: ${midia.fileName}]\nAnálise automática: ${JSON.stringify({ tipo: analise.tipo, campos: analise.campos, capacidade_financiamento: analise.capacidade_financiamento_estimada })}`,
+    });
+    historico[telefone].push({ role: "assistant", content: resp });
+    salvarHistorico();
+
+    // Notifica o corretor
+    const corretor = (cliente.corretores || [])[0];
+    if (corretor?.telefone) {
+      const validacoesTxt = (analise.alertas || []).map(a => `⚠️ ${a}`).join("\n");
+      const aviso = `📎 *Documento recebido — ${cliente.agente?.nome}*\n\n*Lead:* ${nomeLead || "(sem nome)"} (${telefone})\n*Tipo:* ${analise.tipo}\n*Resumo:* ${analise.resumo_curto || "—"}${analise.capacidade_financiamento_estimada ? `\n\n💰 *Capacidade financiamento estimada:* R$ ${Number(analise.capacidade_financiamento_estimada).toLocaleString("pt-BR")}` : ""}${analise.campos && Object.keys(analise.campos).length ? `\n\n*Dados extraídos:* ${JSON.stringify(analise.campos, null, 2).slice(0, 400)}` : ""}${validacoesTxt ? `\n\n${validacoesTxt}` : ""}`;
+      await zapiSendText(corretor.telefone, aviso);
+    }
+    console.log(`[${telefone}] doc analisado: ${analise.tipo}`);
+  } catch (e) {
+    console.error(`[${telefone}] erro processando mídia:`, e.message);
+    await zapiSendText(telefone, "Recebi seu arquivo, vou repassar pro Vanei dar uma olhada 👍");
+  }
+}
 
 app.get("/health", (_req, res) => res.json({
   ok: true,
