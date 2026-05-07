@@ -8,7 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import { getCliente } from "./config.js";
 import { montarSystemPrompt } from "./system-prompt.js";
-import { TOOL_DEFS, executarTool, leadEstaPausado, pausarLead, despausarLead, zapiSendText, foiEnviadaPorNos } from "./tools.js";
+import { TOOL_DEFS, executarTool, leadEstaPausado, pausarLead, despausarLead, zapiSendText, foiEnviadaPorNos, zapiTranscreverAudio } from "./tools.js";
 import { carregarConhecimento, tamanhoEstimado } from "./conhecimento.js";
 import { extrairMidiaDoWebhook, baixarMidia, analisarComVision } from "./media.js";
 import { montarMemoriaLead, setEstado, registrarImovelMostrado } from "./estado.js";
@@ -149,7 +149,13 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    const mensagem = body.text?.message || body.message || body.body || body.audio?.transcription || "";
+    let mensagem = body.text?.message || body.message || body.body || "";
+    if (!mensagem && body.audio) {
+      const audioUrl = body.audio.audioUrl || body.audio.url;
+      mensagem = body.audio.transcription || await zapiTranscreverAudio({ messageId: body.messageId, audioUrl });
+      if (mensagem) console.log(`[${telefone}] 🎙️ áudio transcrito: ${mensagem}`);
+      else { await zapiSendText(telefone, "Recebi seu áudio 🎙️ mas tive dificuldade de entender. Pode digitar pra mim?"); return; }
+    }
     if (!mensagem) {
       console.log(`[${telefone}] mensagem sem texto — ignorando`);
       return;

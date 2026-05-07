@@ -36,6 +36,25 @@ export function leadEstaPausado(telefone) {
   return true;
 }
 
+export async function zapiTranscreverAudio({ messageId, audioUrl }) {
+  const base = process.env.ZAPI_BASE || `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}`;
+  const headers = { "Content-Type": "application/json" };
+  if (process.env.ZAPI_CLIENT_TOKEN) headers["Client-Token"] = process.env.ZAPI_CLIENT_TOKEN;
+  const tentativas = [];
+  if (messageId) tentativas.push({ messageId });
+  if (audioUrl) tentativas.push({ audioUrl });
+  for (const body of tentativas) {
+    try {
+      const r = await fetch(`${base}/transcribe-audio`, { method: "POST", headers, body: JSON.stringify(body) });
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (j.transcription) return j.transcription;
+      if (j.text) return j.text;
+    } catch {}
+  }
+  return null;
+}
+
 // Memória curta de mensagens enviadas pelo agente pra distinguir echo (fromMe via Z-API) de digitação manual humana
 const _enviosRecentes = new Map();
 const ECHO_JANELA_MS = 60 * 1000;
