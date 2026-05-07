@@ -124,8 +124,8 @@ app.post("/webhook", async (req, res) => {
         console.log(`[${telefone}] agente reativado`);
         return;
       }
-      pausarLead(telefone, 24 * 7);
-      console.log(`[${telefone}] mensagem manual da equipe — agente pausado 7d`);
+      pausarLead(telefone, 24);
+      console.log(`[${telefone}] mensagem manual da equipe — agente pausado 24h`);
       return;
     }
 
