@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { buscar_imoveis } from "./imoveis.js";
 import { getCliente } from "./config.js";
+import { verificar_disponibilidade as calVerificar, agendar_visita as calAgendar } from "./calendar.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || __dirname;
@@ -143,13 +144,86 @@ export const TOOL_DEFS = [
       },
     },
   },
+  {
+    name: "verificar_disponibilidade_agenda",
+    description: "Verifica se um horário está livre na agenda do corretor. Use quando o lead sugerir um horário pra visita. Sempre verifique ANTES de agendar.",
+    input_schema: {
+      type: "object",
+      properties: {
+        corretor_nome: { type: "string", description: "Nome do corretor (Vanei). Omita se for único corretor." },
+        data_hora_inicio: { type: "string", description: "Formato YYYY-MM-DD HH:MM (ex: 2026-05-08 14:00)" },
+        duracao_minutos: { type: "number", description: "Duração em minutos. Padrão 60." },
+      },
+      required: ["data_hora_inicio"],
+    },
+  },
+  {
+    name: "agendar_visita",
+    description: "Agenda visita ao imóvel no Google Calendar do corretor. Use APÓS confirmar que o horário está livre (verificar_disponibilidade_agenda). Cria evento e notifica o corretor por WhatsApp.",
+    input_schema: {
+      type: "object",
+      properties: {
+        corretor_nome: { type: "string", description: "Nome do corretor (omita se único)" },
+        data_hora_inicio: { type: "string", description: "YYYY-MM-DD HH:MM" },
+        duracao_minutos: { type: "number", description: "Padrão 60" },
+        nome_lead: { type: "string" },
+        telefone_lead: { type: "string" },
+        imovel_codigo: { type: "string" },
+        local: { type: "string", description: "Endereço aproximado do imóvel" },
+        observacoes: { type: "string", description: "Detalhes extras (urgência, ponto de encontro, etc)" },
+      },
+      required: ["data_hora_inicio", "imovel_codigo"],
+    },
+  },
 ];
+
+function getCalendarIdDoCorretor(corretorNome) {
+  const cfg = getCliente();
+  if (corretorNome) {
+    const c = (cfg.corretores || []).find(x => x.nome.toLowerCase() === corretorNome.toLowerCase());
+    if (c?.calendar_id) return { calendar_id: c.calendar_id, corretor: c };
+  }
+  const primeiro = (cfg.corretores || [])[0];
+  return primeiro?.calendar_id ? { calendar_id: primeiro.calendar_id, corretor: primeiro } : null;
+}
+
+async function verificar_disponibilidade_agenda({ corretor_nome, data_hora_inicio, duracao_minutos }) {
+  const r = getCalendarIdDoCorretor(corretor_nome);
+  if (!r) return { erro: "Corretor sem agenda configurada." };
+  return await calVerificar({ calendar_id: r.calendar_id, data_hora_inicio, duracao_minutos });
+}
+
+async function agendar_visita_full({ corretor_nome, data_hora_inicio, duracao_minutos, nome_lead, telefone_lead, imovel_codigo, local, observacoes }) {
+  const r = getCalendarIdDoCorretor(corretor_nome);
+  if (!r) return { erro: "Corretor sem agenda configurada." };
+  const cfg = getCliente();
+  const titulo = `Visita ${imovel_codigo || ""} - ${nome_lead || telefone_lead || "Lead"}`.trim();
+  const descricao = `Visita agendada via agente ${cfg.agente?.nome || "Bia"}\nLead: ${nome_lead || "—"}\nTelefone: ${telefone_lead || "—"}\nImóvel: ${imovel_codigo || "—"}${observacoes ? `\n\nObs: ${observacoes}` : ""}`;
+  const res = await calAgendar({ calendar_id: r.calendar_id, data_hora_inicio, duracao_minutos, titulo, descricao, local });
+
+  if (res.ok) {
+    // Notifica o corretor por WhatsApp
+    const aviso = `📅 *Nova visita agendada!*\n\n*Imóvel:* ${imovel_codigo || "—"}\n*Lead:* ${nome_lead || "—"} (${telefone_lead || "—"})\n*Quando:* ${new Date(res.inicio).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}${local ? `\n*Local:* ${local}` : ""}${observacoes ? `\n*Obs:* ${observacoes}` : ""}\n\nEvento criado no Google Calendar 👍`;
+    try { await zapiSendText(r.corretor.telefone, aviso); } catch {}
+    fs.appendFileSync(LEADS_FILE, JSON.stringify({
+      ts: new Date().toISOString(),
+      cliente: cfg.imobiliaria?.nome,
+      status: "VISITA_AGENDADA",
+      corretor: r.corretor.nome,
+      nome_lead, telefone_lead, imovel_codigo,
+      quando: res.inicio,
+    }) + "\n");
+  }
+  return res;
+}
 
 export async function executarTool(name, input) {
   switch (name) {
     case "buscar_imoveis": return await buscar_imoveis(input);
     case "transferir_corretor": return await transferir_corretor(input);
     case "salvar_lead": return salvar_lead(input);
+    case "verificar_disponibilidade_agenda": return await verificar_disponibilidade_agenda(input);
+    case "agendar_visita": return await agendar_visita_full(input);
     default: return { erro: `Tool desconhecida: ${name}` };
   }
 }
