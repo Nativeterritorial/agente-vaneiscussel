@@ -22,6 +22,7 @@
     }
   ],
   "corretor_padrao": "5554981033499",
+  "demo_telefone_monitor": "5554992215356",
   "planilha_imoveis": {
     "tipo": "google_sheets_csv",
     "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSmFMJmAaR6v97nCLV99kxBsir2Live2v4ubZOYeuXliLhoAFyH5BK3sW9xO6TPq2lJlYePvWx7Myiu/pub?output=csv&gid=464702849&single=true"

@@ -248,7 +248,12 @@ async function agendar_visita_full({ corretor_nome, data_hora_inicio, duracao_mi
   if (res.ok) {
     // Notifica o corretor por WhatsApp
     const aviso = `📅 *Nova visita agendada!*\n\n*Imóvel:* ${imovel_codigo || "—"}\n*Lead:* ${nome_lead || "—"} (${telefone_lead || "—"})\n*Quando:* ${new Date(res.inicio).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}${local ? `\n*Local:* ${local}` : ""}${observacoes ? `\n*Obs:* ${observacoes}` : ""}\n\nEvento criado no Google Calendar 👍`;
-    try { await zapiSendText(r.corretor.telefone, aviso); } catch {}
+    try { await zapiSendText(r.corretor.telefone, aviso); }
+    catch (e) { console.error(`[notif corretor] erro: ${e.message}`); }
+    // Modo demo: copia pra Felipe pra ele ver ao vivo
+    if (cfg.demo_telefone_monitor) {
+      try { await zapiSendText(cfg.demo_telefone_monitor, `[DEMO] ${aviso}`); } catch (e) { console.error(`[demo monitor] ${e.message}`); }
+    }
     fs.appendFileSync(LEADS_FILE, JSON.stringify({
       ts: new Date().toISOString(),
       cliente: cfg.imobiliaria?.nome,
@@ -297,7 +302,11 @@ async function cancelar_visita_full({ telefone_lead, event_id, motivo, corretor_
   // Notifica corretor
   const cfg = getCliente();
   const aviso = `❌ *Visita cancelada*\n\n*Imóvel:* ${visita?.imovel_codigo || "—"}\n*Lead:* ${visita?.nome_lead || "—"} (${telefone_lead || "—"})\n*Era pra:* ${visita ? new Date(visita.inicio).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}${motivo ? `\n*Motivo:* ${motivo}` : ""}\n\nHorário liberado na agenda.`;
-  try { await zapiSendText(r.corretor.telefone, aviso); } catch {}
+  try { await zapiSendText(r.corretor.telefone, aviso); }
+  catch (e) { console.error(`[cancel notif] ${e.message}`); }
+  if (cfg.demo_telefone_monitor) {
+    try { await zapiSendText(cfg.demo_telefone_monitor, `[DEMO] ${aviso}`); } catch {}
+  }
 
   fs.appendFileSync(LEADS_FILE, JSON.stringify({
     ts: new Date().toISOString(),
