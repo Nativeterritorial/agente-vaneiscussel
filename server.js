@@ -11,6 +11,8 @@ import { montarSystemPrompt } from "./system-prompt.js";
 import { TOOL_DEFS, executarTool, leadEstaPausado, pausarLead, despausarLead, zapiSendText, foiEnviadaPorNos } from "./tools.js";
 import { carregarConhecimento, tamanhoEstimado } from "./conhecimento.js";
 import { extrairMidiaDoWebhook, baixarMidia, analisarComVision } from "./media.js";
+import { montarMemoriaLead, setEstado, registrarImovelMostrado } from "./estado.js";
+import { agendarScheduler, rodarScheduler } from "./scheduler.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, ".env") });
@@ -38,17 +40,23 @@ const SYSTEM_PROMPT = montarSystemPrompt();
 const t = tamanhoEstimado();
 console.log(`📚 Base de conhecimento imobiliário: ~${t.tokensEstimados} tokens`);
 
-function systemBlocks() {
-  return [
+function systemBlocks(memoriaLead = "") {
+  const blocks = [
     { type: "text", text: carregarConhecimento(), cache_control: { type: "ephemeral" } },
     { type: "text", text: SYSTEM_PROMPT },
   ];
+  if (memoriaLead) blocks.push({ type: "text", text: memoriaLead });
+  return blocks;
 }
 
 async function rodarAgente(telefone, nomeLead, mensagem) {
   if (!historico[telefone]) historico[telefone] = [];
   const conv = historico[telefone];
   conv.push({ role: "user", content: mensagem });
+
+  // Marca interação atual + carrega memória persistente do lead
+  setEstado(telefone, { ultima_interacao: new Date().toISOString(), frio_nudge_enviado: false });
+  const memoria = montarMemoriaLead(telefone);
 
   let respostaFinal = "";
   let iter = 0;
@@ -57,7 +65,7 @@ async function rodarAgente(telefone, nomeLead, mensagem) {
     const r = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 1500,
-      system: systemBlocks(),
+      system: systemBlocks(memoria),
       tools: TOOL_DEFS,
       messages: conv,
     });
@@ -73,6 +81,10 @@ async function rodarAgente(telefone, nomeLead, mensagem) {
         if (block.type === "tool_use") {
           console.log(`  → tool: ${block.name}(${JSON.stringify(block.input).slice(0, 200)})`);
           const result = await executarTool(block.name, { ...block.input, telefone_lead: block.input.telefone_lead || telefone, nome_lead: block.input.nome_lead || nomeLead });
+          // Se buscar imóveis devolveu lista, registra o que foi mostrado
+          if (block.name === "buscar_imoveis" && result?.imoveis) {
+            for (const im of result.imoveis) registrarImovelMostrado(telefone, im.codigo);
+          }
           toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(result) });
         }
       }
@@ -196,8 +208,15 @@ app.get("/health", (_req, res) => res.json({
   dataDir: DATA_DIR,
 }));
 
+// Trigger manual do scheduler pra testes
+app.post("/scheduler/run", async (_req, res) => {
+  try { await rodarScheduler(); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ erro: e.message }); }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🤖 ${cliente.agente?.nome} rodando em http://localhost:${PORT}`);
   console.log(`   DATA_DIR: ${DATA_DIR}`);
+  agendarScheduler();
 });

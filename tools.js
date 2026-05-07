@@ -4,7 +4,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { buscar_imoveis } from "./imoveis.js";
 import { getCliente } from "./config.js";
-import { verificar_disponibilidade as calVerificar, agendar_visita as calAgendar } from "./calendar.js";
+import { verificar_disponibilidade as calVerificar, agendar_visita as calAgendar, cancelar_evento as calCancelar } from "./calendar.js";
+import { registrarVisita, atualizarVisita, getEstado, setEstado } from "./estado.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || __dirname;
@@ -93,6 +94,18 @@ export function salvar_lead(dados) {
     status: "QUALIFICADO",
     ...dados,
   }) + "\n");
+  if (dados.telefone) {
+    const patch = {};
+    if (dados.nome) patch.nome_lead = dados.nome;
+    const pref = [];
+    if (dados.tipo) pref.push(dados.tipo);
+    if (dados.dormitorios) pref.push(`${dados.dormitorios}d`);
+    if (dados.bairro) pref.push(`bairro ${dados.bairro}`);
+    if (dados.orcamento) pref.push(`até R$ ${Number(dados.orcamento).toLocaleString("pt-BR")}`);
+    if (dados.finalidade) pref.push(dados.finalidade);
+    if (pref.length) patch.preferencia = pref.join(", ");
+    setEstado(dados.telefone, patch);
+  }
   return { ok: true };
 }
 
@@ -158,6 +171,18 @@ export const TOOL_DEFS = [
     },
   },
   {
+    name: "cancelar_visita",
+    description: "Cancela uma visita previamente agendada. Use quando o lead disser que não vai conseguir, quer desmarcar, ou pedir pra remarcar (nesse caso cancela e depois agenda novo). Libera o horário na agenda do corretor automaticamente.",
+    input_schema: {
+      type: "object",
+      properties: {
+        telefone_lead: { type: "string" },
+        motivo: { type: "string", description: "Motivo do cancelamento se o lead disser (ex: 'imprevisto', 'remarcar pra outro horário')" },
+        corretor_nome: { type: "string", description: "Omita se único corretor" },
+      },
+    },
+  },
+  {
     name: "agendar_visita",
     description: "Agenda visita ao imóvel no Google Calendar do corretor. Use APÓS confirmar que o horário está livre (verificar_disponibilidade_agenda). Cria evento e notifica o corretor por WhatsApp.",
     input_schema: {
@@ -213,8 +238,56 @@ async function agendar_visita_full({ corretor_nome, data_hora_inicio, duracao_mi
       nome_lead, telefone_lead, imovel_codigo,
       quando: res.inicio,
     }) + "\n");
+    if (telefone_lead) {
+      registrarVisita(telefone_lead, {
+        event_id: res.event_id,
+        inicio: res.inicio,
+        fim: res.fim,
+        imovel_codigo,
+        nome_lead,
+        local,
+      });
+      if (nome_lead) setEstado(telefone_lead, { nome_lead });
+    }
   }
   return res;
+}
+
+async function cancelar_visita_full({ telefone_lead, event_id, motivo, corretor_nome }) {
+  const r = getCalendarIdDoCorretor(corretor_nome);
+  if (!r) return { erro: "Corretor sem agenda configurada." };
+
+  // Se não veio event_id, tenta achar pela última visita agendada do telefone
+  let evtId = event_id;
+  let visita = null;
+  if (telefone_lead) {
+    const e = getEstado(telefone_lead);
+    visita = (e.visitas || []).filter(v => v.status === "agendada").slice(-1)[0];
+    if (!evtId && visita) evtId = visita.event_id;
+  }
+  if (!evtId) return { erro: "Nenhuma visita agendada encontrada pra cancelar." };
+
+  try {
+    await calCancelar({ calendar_id: r.calendar_id, event_id: evtId });
+  } catch (e) {
+    console.warn(`[cancelar] erro deletando evento: ${e.message}`);
+  }
+
+  if (telefone_lead) atualizarVisita(telefone_lead, evtId, { status: "cancelada", cancelada_em: new Date().toISOString(), motivo });
+
+  // Notifica corretor
+  const cfg = getCliente();
+  const aviso = `❌ *Visita cancelada*\n\n*Imóvel:* ${visita?.imovel_codigo || "—"}\n*Lead:* ${visita?.nome_lead || "—"} (${telefone_lead || "—"})\n*Era pra:* ${visita ? new Date(visita.inicio).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}${motivo ? `\n*Motivo:* ${motivo}` : ""}\n\nHorário liberado na agenda.`;
+  try { await zapiSendText(r.corretor.telefone, aviso); } catch {}
+
+  fs.appendFileSync(LEADS_FILE, JSON.stringify({
+    ts: new Date().toISOString(),
+    cliente: cfg.imobiliaria?.nome,
+    status: "VISITA_CANCELADA",
+    nome_lead: visita?.nome_lead, telefone_lead, imovel_codigo: visita?.imovel_codigo, motivo,
+  }) + "\n");
+
+  return { ok: true, mensagem_sugerida: "Beleza, cancelei aqui pra você. Quando quiser remarcar, me avisa que eu confiro novos horários 👍" };
 }
 
 export async function executarTool(name, input) {
@@ -224,6 +297,7 @@ export async function executarTool(name, input) {
     case "salvar_lead": return salvar_lead(input);
     case "verificar_disponibilidade_agenda": return await verificar_disponibilidade_agenda(input);
     case "agendar_visita": return await agendar_visita_full(input);
+    case "cancelar_visita": return await cancelar_visita_full(input);
     default: return { erro: `Tool desconhecida: ${name}` };
   }
 }

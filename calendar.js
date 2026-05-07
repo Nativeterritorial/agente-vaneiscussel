@@ -85,6 +85,13 @@ export async function verificar_disponibilidade({ calendar_id, data_hora_inicio,
   };
 }
 
+export async function cancelar_evento({ calendar_id, event_id }) {
+  if (!calendar_id || !event_id) return { erro: "calendar_id e event_id obrigatórios" };
+  const cal = encodeURIComponent(calendar_id);
+  await gcal(`/calendars/${cal}/events/${encodeURIComponent(event_id)}`, { method: "DELETE" });
+  return { ok: true };
+}
+
 export async function agendar_visita({ calendar_id, data_hora_inicio, duracao_minutos = 60, titulo, descricao, local }) {
   const inicio = parseDataHora(data_hora_inicio);
   if (!inicio || isNaN(inicio.getTime())) return { erro: "Data/hora inválida. Use formato YYYY-MM-DD HH:MM" };
